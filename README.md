@@ -8,7 +8,8 @@ After `mvn verify`, checks the JaCoCo coverage of one class and the number
 of passing, asserted tests in one surefire suite against the thresholds in
 [`config.env`](config.env), then comments the results on the pull request.
 When every criterion is met, the comment ends with an exit-criterion string
-to paste into Moodle.
+to paste into Moodle. Later runs edit that same comment rather than adding
+new ones.
 
 ## Usage
 

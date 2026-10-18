@@ -28,12 +28,19 @@ runs:
         body=$("$bin" -config "$GITHUB_ACTION_PATH/config.env" -pr "$PR_NUMBER") || status=$?
 
         printf '%s\n' "$body" >> "$GITHUB_STEP_SUMMARY"
-        jq -n --arg body "$body" '{body: $body}' | curl -sf -X POST \
-          -H "Authorization: Bearer $GH_TOKEN" \
-          -H "Accept: application/vnd.github+json" \
-          -d @- \
-          "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" \
-          > /dev/null
+
+        # Keep one comment per PR: edit our earlier one if there is one.
+        marker='<!-- coverage-proof -->'
+        comments="repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments"
+        id=$(gh api --paginate "$comments" --jq \
+          ".[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"$marker\"))) | .id" \
+          | head -n1)
+        if [ -n "$id" ]; then
+          gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$id" \
+            -f body="$marker"$'\n'"$body" > /dev/null
+        else
+          gh api -X POST "$comments" -f body="$marker"$'\n'"$body" > /dev/null
+        fi
 
         # 1 = criteria not met: the comment says why, the step stays green.
         # 2 = the reports could not be read: fail so the run log shows it.
