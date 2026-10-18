@@ -1,0 +1,40 @@
+name: 'coverage-proof'
+description: 'Checks test count and coverage after mvn verify and posts the exit-criterion string to the pull request.'
+inputs:
+  github-token:
+    description: 'Token with pull-requests read/write permission.'
+    required: true
+    default: ${{ github.token }}
+runs:
+  using: 'composite'
+  steps:
+    - name: Check exit criterion and post result
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+      run: |
+        set -euo pipefail
+        if [ -z "$PR_NUMBER" ]; then
+          echo "::notice::Not a pull request run, so no exit-criterion string is produced."
+          exit 0
+        fi
+
+        # Thresholds come from this action's config.env, never from the
+        # calling workflow: students can edit their workflow, not this repo.
+        bin="$GITHUB_ACTION_PATH/bin/coverage-proof"
+        chmod +x "$bin"
+        status=0
+        body=$("$bin" -config "$GITHUB_ACTION_PATH/config.env" -pr "$PR_NUMBER") || status=$?
+
+        printf '%s\n' "$body" >> "$GITHUB_STEP_SUMMARY"
+        jq -n --arg body "$body" '{body: $body}' | curl -sf -X POST \
+          -H "Authorization: Bearer $GH_TOKEN" \
+          -H "Accept: application/vnd.github+json" \
+          -d @- \
+          "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" \
+          > /dev/null
+
+        # 1 = criteria not met: the comment says why, the step stays green.
+        # 2 = the reports could not be read: fail so the run log shows it.
+        [ "$status" -ne 2 ]
